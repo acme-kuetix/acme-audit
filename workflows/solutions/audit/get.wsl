@@ -1,0 +1,36 @@
+// GET /audit/entries/{entryId} — retrieve a single audit entry.
+// Provided by acme-audit package.
+
+module audit_get
+
+import persistence/store
+import services/common
+
+workflow audit_get {
+  start: Get
+
+  state Get {
+    action persistence/store/store.Get(
+      collection: "audit_entries",
+      id: $url.entryId
+    ) as Result
+    on success -> OK
+    on error -> Failed
+  }
+
+  state OK {
+    action services/common/response.Response(
+      value: $Result.response.doc,
+      statusCode: 200
+    ) as FinalResult
+    end ok
+  }
+
+  state Failed {
+    action services/common/response.Response(
+      value: { message: "audit entry not found", entryId: $url.entryId },
+      statusCode: 404
+    ) as ErrorResult
+    end fail
+  }
+}

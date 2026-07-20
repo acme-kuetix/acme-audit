@@ -1,0 +1,68 @@
+// GET /audit/entries — list audit entries with optional filters.
+// Query params: entityType, entityId, actor, workflow, limit
+// Returns most-recent-first (sorted by id descending; id is zero-padded
+// sequence number so lexical = chronological).
+//
+// Composes persistence/store.ListOptional (skips empty filter fields) +
+// collections/ops.SortByDesc (most-recent-first) + collections/ops.LimitOrAll.
+
+module audit_list
+
+import persistence/store
+import collections/ops
+import services/common
+
+workflow audit_list {
+  start: List
+
+  state List {
+    action persistence/store/store.ListOptional(
+      collection: "audit_entries",
+      filter: {
+        entityType: $json.entityType??"",
+        entityId: $json.entityId??"",
+        actor: $json.actor??"",
+        workflow: $json.workflow??""
+      }
+    ) as RawList
+    on success -> SortDesc
+    on error -> Failed
+  }
+
+  state SortDesc {
+    action collections/ops/ops.SortByDesc(
+      arr: $RawList.response.docs,
+      field: "id"
+    ) as Sorted
+    on success -> ApplyLimit
+    on error -> Failed
+  }
+
+  state ApplyLimit {
+    action collections/ops/ops.LimitOrAll(
+      arr: $Sorted.response.arr,
+      n: $json.limit??0
+    ) as Limited
+    on success -> OK
+    on error -> Failed
+  }
+
+  state OK {
+    action services/common/response.Response(
+      value: {
+        count: $Limited.response.count,
+        items: $Limited.response.arr
+      },
+      statusCode: 200
+    ) as FinalResult
+    end ok
+  }
+
+  state Failed {
+    action services/common/response.Response(
+      value: { message: $RawList.response.message },
+      statusCode: $RawList.statusCode??400
+    ) as ErrorResult
+    end fail
+  }
+}

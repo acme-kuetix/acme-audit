@@ -1,0 +1,107 @@
+// POST /audit/entries — record an audit entry (append-only).
+// Expects JSON body: {actor, workflow, state?, transition?, entityType?, entityId?, before?, after?, success, errorMessage?}
+// Also callable as a sub-workflow: caller SetValue's "audit.eventData" map, then RunWorkflow("audit/record").
+// Provided by acme-audit package.
+
+module audit_record
+
+import core/utils
+import datetime/ops
+import persistence/store
+import sequence/sequence
+import services/common
+import strings/ops
+
+workflow audit_record {
+  start: LoadEventData
+  state LoadEventData {
+    action core/utils/utils.GetValue(key: "audit.eventData") as AuditData
+    on success -> Validate
+    on error -> Validate
+  }
+
+  state Validate {
+    action strings/ops/ops.AssertRequired(
+      value: $AuditData.response.value.workflow??$json.workflow,
+      code: "workflow_required",
+      message: "workflow is required"
+    ) as Check
+    on success -> GetTimestamp
+    on error -> ValidateFailed
+  }
+
+  state GetTimestamp {
+    action datetime/ops/ops.Now() as TsResult
+    on success -> GetId
+    on error -> GetTimestampFailed
+  }
+
+  state GetId {
+    action sequence/sequence.NextByCode(code: "audit-entry", scope: "") as SeqResult
+    on success -> Create
+    on error -> GetIdFailed
+  }
+
+  state Create {
+    action persistence/store/store.Create(
+      collection: "audit_entries",
+      id: $SeqResult.response.formatted,
+      doc: {
+        id: $SeqResult.response.formatted,
+        actor: $AuditData.response.value.actor??$json.actor??"",
+        workflow: $AuditData.response.value.workflow??$json.workflow,
+        state: $AuditData.response.value.state??$json.state??"",
+        transition: $AuditData.response.value.transition??$json.transition??"",
+        entityType: $AuditData.response.value.entityType??$json.entityType??"",
+        entityId: $AuditData.response.value.entityId??$json.entityId??"",
+        before: $AuditData.response.value.before??$json.before,
+        after: $AuditData.response.value.after??$json.after,
+        success: $AuditData.response.value.success??$json.success??true,
+        errorMessage: $AuditData.response.value.errorMessage??$json.errorMessage??"",
+        timestamp: $TsResult.response.result
+      }
+    ) as CreateResult
+    on success -> OK
+    on error -> CreateFailed
+  }
+
+  state OK {
+    action services/common/response.Response(
+      value: $CreateResult.response.doc,
+      statusCode: 201
+    ) as FinalResult
+    end ok
+  }
+
+  state ValidateFailed {
+    action services/common/response.Response(
+      value: { message: $Check.response.message, code: $Check.response.code },
+      statusCode: 400
+    ) as ErrorResult
+    end fail
+  }
+
+  state GetTimestampFailed {
+    action services/common/response.Response(
+      value: { message: "record failed", code: "record_failed" },
+      statusCode: 500
+    ) as ErrorResult
+    end fail
+  }
+
+  state GetIdFailed {
+    action services/common/response.Response(
+      value: { message: $SeqResult.response.message??"record failed", code: $SeqResult.response.code??"record_failed" },
+      statusCode: 500
+    ) as ErrorResult
+    end fail
+  }
+
+  state CreateFailed {
+    action services/common/response.Response(
+      value: { message: $CreateResult.response.message??"record failed", code: $CreateResult.response.code??"record_failed" },
+      statusCode: 500
+    ) as ErrorResult
+    end fail
+  }
+}

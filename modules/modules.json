@@ -1,0 +1,12 @@
+{
+  "audit/audit": {
+    "info": {
+      "go_module": "github.com/acme-kuetix/acme-audit",
+      "namespace": "audit",
+      "class": "audit",
+      "label": "Audit Module",
+      "description": "Handles audit operations for audit service"
+    },
+    "methods": null
+  }
+}
