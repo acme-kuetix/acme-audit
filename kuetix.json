@@ -1,6 +1,6 @@
 {
   "name": "acme-audit",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Kuetix package with reusable workflows and transitions for audit logging (append-only entries, query by entity/actor/workflow)",
   "author": "acme",
   "workflows": [
